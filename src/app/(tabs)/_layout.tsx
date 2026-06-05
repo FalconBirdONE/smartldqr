@@ -4,7 +4,12 @@ import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { useMerchantSetup } from '@/context/merchant-setup';
 
 export default function TabsLayout() {
-  const { isSetupComplete } = useMerchantSetup();
+  const { isSetupComplete, isHydrated } = useMerchantSetup();
+
+  // Wait for the persisted flag before routing to avoid a flash of onboarding.
+  if (!isHydrated) {
+    return null;
+  }
 
   // Gate: the tabs are only reachable once merchant setup is complete.
   // Otherwise send the merchant to onboarding.

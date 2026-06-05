@@ -1,5 +1,1 @@
-import { ScreenPlaceholder } from '@/components/screen-placeholder';
-
-export default function CatalogScreen() {
-  return <ScreenPlaceholder label="CatalogScreen" />;
-}
+export { default } from '@/screens/CatalogScreen';

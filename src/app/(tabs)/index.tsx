@@ -1,5 +1,1 @@
-import { ScreenPlaceholder } from '@/components/screen-placeholder';
-
-export default function HomeScreen() {
-  return <ScreenPlaceholder label="HomeScreen" />;
-}
+export { default } from '@/screens/HomeScreen';

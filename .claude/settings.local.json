@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.expo.dev)",
+      "Bash(find . -maxdepth 2 -name \"*.d.ts\" -not -path \"./node_modules/*\")",
+      "Bash(ls node_modules/nativewind)",
+      "Bash(ls expo-env.d.ts)",
+      "Bash(cat expo-env.d.ts)",
+      "Bash(npx expo *)",
+      "PowerShell(npx tsc --noEmit)",
+      "PowerShell(npx expo install react-native-svg react-native-qrcode-svg)"
+    ]
+  }
+}
