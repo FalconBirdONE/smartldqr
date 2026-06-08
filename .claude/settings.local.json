@@ -8,7 +8,9 @@
       "Bash(cat expo-env.d.ts)",
       "Bash(npx expo *)",
       "PowerShell(npx tsc --noEmit)",
-      "PowerShell(npx expo install react-native-svg react-native-qrcode-svg)"
+      "PowerShell(npx expo install react-native-svg react-native-qrcode-svg)",
+      "PowerShell(npx tsc --noEmit -p tsconfig.json)",
+      "PowerShell(npx expo lint)"
     ]
   }
 }

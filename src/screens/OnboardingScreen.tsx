@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { Button, NativeModules, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useMerchantSetup } from '@/context/merchant-setup';
+import { TABLET_H_PADDING, useResponsive } from '@/hooks/use-responsive';
 
 type MerchantDetails = {
   merchant_name: string;
@@ -12,7 +13,7 @@ type MerchantDetails = {
 };
 
 const { MerchantModule } = NativeModules as {
-  MerchantModule: {
+  MerchantModule?: {
     saveMerchantDetails(details: MerchantDetails): Promise<boolean>;
     getMerchantDetails(): Promise<string>;
     isOnboardingComplete(): Promise<boolean>;
@@ -22,6 +23,7 @@ const { MerchantModule } = NativeModules as {
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { isTablet } = useResponsive();
   const { completeSetup } = useMerchantSetup();
 
   const [merchantName, setMerchantName] = useState('');
@@ -39,7 +41,7 @@ export default function OnboardingScreen() {
     setSubmitting(true);
     setError(null);
     try {
-      await MerchantModule.saveMerchantDetails({
+      await MerchantModule?.saveMerchantDetails({
         merchant_name: merchantName.trim(),
         business_name: businessName.trim(),
         category: category.trim(),
@@ -57,7 +59,7 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isTablet && styles.containerTablet]}>
       <Text style={styles.title}>Merchant Onboarding</Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <TextInput
@@ -100,6 +102,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
     gap: 12,
+  },
+  containerTablet: {
+    paddingHorizontal: TABLET_H_PADDING,
   },
   title: {
     fontSize: 20,

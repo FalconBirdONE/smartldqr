@@ -1,8 +1,11 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Button, StyleSheet, Text, View } from 'react-native';
 
+import { TABLET_H_PADDING, useResponsive } from '@/hooks/use-responsive';
+
 export default function ConfirmationScreen() {
   const router = useRouter();
+  const { isTablet } = useResponsive();
   const params = useLocalSearchParams<{
     transaction_id?: string;
     total_amount?: string;
@@ -14,7 +17,7 @@ export default function ConfirmationScreen() {
   const timestamp = params.timestamp ? new Date(params.timestamp).toLocaleString() : '';
 
   return (
-    <View style={styles.center}>
+    <View style={[styles.center, isTablet && styles.centerTablet]}>
       <Text style={styles.successIndicator}>✓</Text>
       <Text style={styles.title}>Payment Confirmed</Text>
       {transactionId ? (
@@ -38,6 +41,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
     padding: 24,
+  },
+  centerTablet: {
+    paddingHorizontal: TABLET_H_PADDING,
   },
   successIndicator: {
     fontSize: 72,
