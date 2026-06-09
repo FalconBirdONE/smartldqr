@@ -1,15 +1,24 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { ActivityIndicator, Button, FlatList, StyleSheet, Text, View } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { TABLET_H_PADDING, useResponsive } from '@/hooks/use-responsive';
+import { BasketPanel, type BasketLine } from '@/components/ldqr/basket-panel';
+import { EmiBanner, EmiTray, lowestEmiPerMonth, type EmiOption } from '@/components/ldqr/emi';
+import { LoyaltyCard } from '@/components/ldqr/loyalty-card';
+import { PalmConfirm } from '@/components/ldqr/palm-confirm';
+import { PersistentFooter, type FooterKey } from '@/components/ldqr/persistent-footer';
+import { PrimaryButton } from '@/components/ldqr/primary-button';
+import { QrCard } from '@/components/ldqr/qr-card';
+import { SplitLayout } from '@/components/ldqr/split-layout';
+import { TapAndPayZone, type TapState } from '@/components/ldqr/tap-and-pay-zone';
+import { TrustChip } from '@/components/ldqr/trust-chip';
+import { useBrand } from '@/context/brand';
+import { EMI_THRESHOLD, Palette, Space, Type, UPI_LITE_LIMIT } from '@/constants/design';
 import { BasketStore } from '@/services/basket-store';
 import { TransactionStore } from '@/services/transaction-store';
 import type { BasketItem } from '@/types/basket';
 
-// Random UUID-shaped string for the simulated QR — deliberately NOT a real
-// payment URI in this phase.
+// UUID-shaped value for the simulated QR — not a real payment URI in this phase.
 const generateSimulatedQrValue = (): string =>
   'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = Math.floor(Math.random() * 16);
@@ -17,15 +26,28 @@ const generateSimulatedQrValue = (): string =>
     return v.toString(16);
   });
 
+const APP = 'GPay';
+const BANK = 'HDFC ••4291';
+
 export default function CheckoutScreen() {
   const router = useRouter();
-  const { isTablet } = useResponsive();
+  const { brand } = useBrand();
+
   const [items, setItems] = useState<BasketItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [qrValue] = useState(generateSimulatedQrValue);
+  const [qrValue, setQrValue] = useState(generateSimulatedQrValue);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Payment journey state.
+  const [tapState, setTapState] = useState<TapState>('idle');
+  const [showPalm, setShowPalm] = useState(false);
+  const [emiTrayOpen, setEmiTrayOpen] = useState(false);
+  const [chosenEmi, setChosenEmi] = useState<EmiOption | null>(null);
+  const [loyaltyJoined, setLoyaltyJoined] = useState(false);
+  const [loyaltyDismissed, setLoyaltyDismissed] = useState(false);
+  const methodRef = useRef<string>('UPI');
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const loadBasket = useCallback(async () => {
     setLoading(true);
@@ -36,6 +58,7 @@ export default function CheckoutScreen() {
       ]);
       setItems(basketItems);
       setTotal(basketTotal);
+      setQrValue(generateSimulatedQrValue()); // QR auto-refreshes as basket changes
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load basket.');
@@ -44,157 +67,256 @@ export default function CheckoutScreen() {
     }
   }, []);
 
-  // Runs on mount and every time the tab regains focus.
   useFocusEffect(
     useCallback(() => {
       void loadBasket();
+      return () => timers.current.forEach(clearTimeout);
     }, [loadBasket])
   );
 
-  const handleSimulateScan = async () => {
-    setProcessing(true);
-    setError(null);
-    try {
-      const transactionId = await TransactionStore.logTransaction({
-        total_amount: total,
-        payment_method: 'SIMULATED_QR',
-        basket_snapshot: JSON.stringify(items),
-        item_count: items.reduce((sum, item) => sum + item.quantity, 0),
-      });
-      await BasketStore.clearBasket();
-      router.replace({
-        pathname: '/confirmation',
-        params: {
-          transaction_id: transactionId,
-          total_amount: String(total),
-          timestamp: new Date().toISOString(),
-        },
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Payment simulation failed. Please try again.');
-    } finally {
-      setProcessing(false);
-    }
-  };
+  const eligibleEmi = total >= EMI_THRESHOLD;
+  const isLite = total > 0 && total < UPI_LITE_LIMIT;
+
+  const lines: BasketLine[] = items.map((it) => ({
+    id: it.basket_id,
+    name: it.sku_name,
+    quantity: it.quantity,
+    subtotal: it.subtotal,
+  }));
+
+  const completePayment = useCallback(
+    async (method: string, emi: EmiOption | null) => {
+      try {
+        const transactionId = await TransactionStore.logTransaction({
+          total_amount: total,
+          payment_method: method,
+          basket_snapshot: JSON.stringify(items),
+          item_count: items.reduce((sum, it) => sum + it.quantity, 0),
+        });
+        await BasketStore.clearBasket();
+        router.replace({
+          pathname: '/confirmation',
+          params: {
+            transaction_id: transactionId,
+            total_amount: String(total),
+            timestamp: new Date().toISOString(),
+            method,
+            app: APP,
+            bank: BANK,
+            points: String(loyaltyJoined ? Math.round(total / 10) : 0),
+            emi_months: emi ? String(emi.months) : '',
+            emi_per_month: emi ? String(emi.perMonth) : '',
+          },
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Payment simulation failed. Please try again.');
+        setTapState('idle');
+        setShowPalm(false);
+      }
+    },
+    [items, total, loyaltyJoined, router]
+  );
+
+  // After the rail authorises, gate on biometrics: UPI Lite skips the PIN/palm
+  // for small tickets; anything else raises the palm confirmation.
+  const authGate = useCallback(
+    (method: string, emi: EmiOption | null) => {
+      methodRef.current = method;
+      setChosenEmi(emi);
+      if (total < UPI_LITE_LIMIT) {
+        void completePayment(method, emi);
+      } else {
+        setShowPalm(true);
+      }
+    },
+    [total, completePayment]
+  );
+
+  const startTap = useCallback(() => {
+    if (tapState !== 'idle' || items.length === 0) return;
+    setTapState('detecting');
+    timers.current.push(setTimeout(() => setTapState('reading'), 950));
+    timers.current.push(
+      setTimeout(() => {
+        setTapState('idle');
+        authGate('UPI Tap & Pay', null);
+      }, 2000)
+    );
+  }, [tapState, items.length, authGate]);
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text>Loading basket…</Text>
+        <ActivityIndicator size="large" color={Palette.indigo} />
+        <Text style={styles.loadingText}>Loading basket…</Text>
       </View>
     );
   }
 
-  const list = (
-    <FlatList
-      style={isTablet ? styles.listColumnTablet : undefined}
-      data={items}
-      keyExtractor={(item) => item.basket_id}
-      ListEmptyComponent={<Text>Basket is empty.</Text>}
-      renderItem={({ item }) => (
-        <View style={styles.row}>
-          <Text style={styles.itemName}>
-            {item.sku_name} × {item.quantity}
-          </Text>
-          <Text>₹{item.subtotal.toFixed(2)}</Text>
-        </View>
-      )}
+  const footerActive: FooterKey = showPalm
+    ? 'palm'
+    : emiTrayOpen || chosenEmi
+      ? 'emi'
+      : loyaltyJoined
+        ? 'loyalty'
+        : 'tap';
+
+  const left = (
+    <ScrollView contentContainerStyle={styles.leftContent} showsVerticalScrollIndicator={false}>
+      <QrCard
+        key={qrValue}
+        amount={total}
+        vpa={brand.vpa}
+        qrValue={qrValue}
+        accent={Palette.indigo}
+        dimmed={tapState !== 'idle'}
+      />
+
+      <TapAndPayZone state={tapState} onPress={startTap} />
+
+      {isLite ? (
+        <TrustChip label="UPI Lite · no PIN under ₹500" tone="teal" icon="⚡" />
+      ) : null}
+
+      {eligibleEmi ? <EmiBanner total={total} onOpen={() => setEmiTrayOpen(true)} /> : null}
+
+      <PrimaryButton
+        label="Scan & pay"
+        subLabel="Simulate a QR scan"
+        variant="teal"
+        icon="▢"
+        disabled={items.length === 0 || tapState !== 'idle'}
+        onPress={() => authGate('UPI QR', null)}
+      />
+    </ScrollView>
+  );
+
+  const right = (
+    <BasketPanel
+      title="Your basket"
+      eyebrow="Itemised bill"
+      lines={lines}
+      total={total}
+      footerSlot={
+        loyaltyJoined || loyaltyDismissed ? (
+          loyaltyJoined ? (
+            <View style={styles.loyaltyWrap}>
+              <LoyaltyCard
+                programLabel={brand.loyaltyLabel}
+                joined
+                onJoin={() => {}}
+                onDismiss={() => {}}
+              />
+            </View>
+          ) : null
+        ) : (
+          <View style={styles.loyaltyWrap}>
+            <LoyaltyCard
+              programLabel={brand.loyaltyLabel}
+              joined={false}
+              onJoin={() => setLoyaltyJoined(true)}
+              onDismiss={() => setLoyaltyDismissed(true)}
+            />
+          </View>
+        )
+      }
     />
   );
 
-  const summary = (
-    <>
-      <Text style={styles.total}>Total: ₹{total.toFixed(2)}</Text>
-
-      <View style={styles.qrContainer}>
-        <QRCode value={qrValue} size={isTablet ? 280 : 200} />
-        <Text style={styles.qrCaption}>Scan to pay (simulated)</Text>
-      </View>
-
-      <Button
-        title={processing ? 'Processing…' : 'Simulate Scan'}
-        onPress={handleSimulateScan}
-        disabled={processing || items.length === 0}
-      />
-    </>
-  );
-
   return (
-    <View style={[styles.container, isTablet && styles.containerTablet]}>
-      <Text style={styles.title}>Checkout</Text>
+    <View style={styles.fill}>
+      <SplitLayout
+        header={
+          <View style={styles.headerRow}>
+            <View>
+              <Text style={styles.headerTitle}>Checkout</Text>
+              <Text style={styles.headerSub}>{brand.name} · Scan, tap or pay later</Text>
+            </View>
+            <TrustChip label="Secure · UPI" tone="green" icon="🔒" />
+          </View>
+        }
+        left={left}
+        right={right}
+        footer={
+          <PersistentFooter
+            active={footerActive}
+            emiPerMonth={eligibleEmi ? lowestEmiPerMonth(total) : null}
+            loyaltyLabel={brand.loyaltyLabel}
+            onSelect={(key) => {
+              if (key === 'tap') startTap();
+              if (key === 'emi' && eligibleEmi) setEmiTrayOpen(true);
+              if (key === 'palm' && items.length > 0) authGate('UPI · Palm', null);
+              if (key === 'loyalty' && !loyaltyJoined) setLoyaltyJoined(true);
+            }}
+          />
+        }
+      />
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {isTablet ? (
-        // Tablet: basket list on the left, total + QR + action on the right.
-        <View style={styles.bodyTablet}>
-          {list}
-          <View style={styles.summaryColumnTablet}>{summary}</View>
-        </View>
-      ) : (
-        <>
-          {list}
-          {summary}
-        </>
-      )}
+      <EmiTray
+        visible={emiTrayOpen}
+        total={total}
+        onClose={() => setEmiTrayOpen(false)}
+        onContinue={(option) => {
+          setEmiTrayOpen(false);
+          authGate('Credit Line on UPI', option);
+        }}
+      />
+
+      <PalmConfirm
+        visible={showPalm}
+        onConfirm={() => {
+          setShowPalm(false);
+          void completePayment(methodRef.current, chosenEmi);
+        }}
+        onSkip={() => {
+          setShowPalm(false);
+          void completePayment(`${methodRef.current} · UPI PIN`, chosenEmi);
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    gap: 12,
+  fill: { flex: 1, backgroundColor: Palette.canvas },
+  leftContent: {
+    gap: Space.lg,
+    paddingBottom: Space.lg,
   },
-  containerTablet: {
-    paddingHorizontal: TABLET_H_PADDING,
-  },
-  bodyTablet: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 24,
-  },
-  listColumnTablet: {
-    flex: 1,
-  },
-  summaryColumnTablet: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
+  loyaltyWrap: {
+    marginTop: Space.lg,
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: Space.md,
+    backgroundColor: Palette.canvas,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '600',
+  loadingText: {
+    color: Palette.inkSecondary,
   },
-  row: {
+  headerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  itemName: {
-    flex: 1,
-  },
-  total: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  qrContainer: {
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
   },
-  qrCaption: {
-    fontSize: 12,
-    color: '#666',
+  headerTitle: {
+    fontSize: Type.title,
+    fontWeight: '800',
+    color: Palette.ink,
+  },
+  headerSub: {
+    fontSize: Type.caption,
+    color: Palette.inkSecondary,
+    marginTop: 2,
   },
   error: {
-    color: 'red',
+    color: Palette.danger,
+    textAlign: 'center',
+    paddingVertical: Space.sm,
+    backgroundColor: Palette.dangerSoft,
   },
 });

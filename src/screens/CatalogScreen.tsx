@@ -1,24 +1,45 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator,
-  Button,
-  FlatList,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 
-import { TABLET_H_PADDING, useResponsive } from '@/hooks/use-responsive';
+import { Eyebrow } from '@/components/ldqr/eyebrow';
+import { PrimaryButton } from '@/components/ldqr/primary-button';
+import { cardShadow, Palette, Radius, SCREEN_GUTTER, Space, Type } from '@/constants/design';
+import { useResponsive } from '@/hooks/use-responsive';
 import { BasketStore } from '@/services/basket-store';
 import { SkuStore } from '@/services/sku-store';
 import type { SkuItem } from '@/types/sku';
+
+function Field({
+  label,
+  ...props
+}: { label: string } & React.ComponentProps<typeof TextInput>) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={styles.input}
+        placeholderTextColor={Palette.inkMuted}
+        {...props}
+      />
+    </View>
+  );
+}
 
 export default function CatalogScreen() {
   const { isTablet } = useResponsive();
   const [skus, setSkus] = useState<SkuItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [added, setAdded] = useState<string | null>(null);
 
   // Add form
   const [newName, setNewName] = useState('');
@@ -46,9 +67,11 @@ export default function CatalogScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadSkus();
-  }, [loadSkus]);
+  useFocusEffect(
+    useCallback(() => {
+      void loadSkus();
+    }, [loadSkus])
+  );
 
   const handleAdd = async () => {
     const price = Number(newPrice);
@@ -98,6 +121,8 @@ export default function CatalogScreen() {
     setError(null);
     try {
       await BasketStore.addItem(item);
+      setAdded(item.sku_id);
+      setTimeout(() => setAdded((cur) => (cur === item.sku_id ? null : cur)), 1200);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to add to basket.');
     }
@@ -128,173 +153,254 @@ export default function CatalogScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text>Loading catalog…</Text>
+        <ActivityIndicator size="large" color={Palette.indigo} />
+        <Text style={styles.muted}>Loading catalog…</Text>
       </View>
     );
   }
 
-  const formContent = (
-    <View style={[styles.addForm, isTablet && styles.formColumnTablet]}>
-      <TextInput style={styles.input} placeholder="Name" value={newName} onChangeText={setNewName} />
-      <TextInput
-        style={styles.input}
-        placeholder="Base name"
-        value={newBaseName}
-        onChangeText={setNewBaseName}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Price"
-        value={newPrice}
-        onChangeText={setNewPrice}
-        keyboardType="numeric"
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Category"
-        value={newCategory}
-        onChangeText={setNewCategory}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Stock count"
-        value={newStockCount}
-        onChangeText={setNewStockCount}
-        keyboardType="numeric"
-      />
-      <Button title="Add SKU" onPress={handleAdd} />
+  const form = (
+    <View style={[styles.card, styles.formCard, isTablet && styles.formColumnTablet]}>
+      <Eyebrow color={Palette.teal}>Inventory</Eyebrow>
+      <Text style={styles.cardTitle}>Add a product</Text>
+      <Field label="Name" placeholder="e.g. Trail running shoes" value={newName} onChangeText={setNewName} />
+      <Field label="Base name (optional)" placeholder="Internal name" value={newBaseName} onChangeText={setNewBaseName} />
+      <Field label="Price (₹)" placeholder="0" value={newPrice} onChangeText={setNewPrice} keyboardType="numeric" />
+      <Field label="Category" placeholder="e.g. Footwear" value={newCategory} onChangeText={setNewCategory} />
+      <Field label="Stock count" placeholder="0" value={newStockCount} onChangeText={setNewStockCount} keyboardType="numeric" />
+      <PrimaryButton label="Add product" variant="teal" size="md" onPress={() => void handleAdd()} />
     </View>
   );
 
-  const listElement = (
-    <FlatList
-      style={isTablet ? styles.listColumnTablet : undefined}
-      data={skus}
-      keyExtractor={(item) => item.sku_id}
-      ListEmptyComponent={<Text style={styles.empty}>No SKUs yet. Add one above.</Text>}
-      renderItem={({ item }) =>
-        editingSkuId === item.sku_id ? (
-          <View style={styles.row}>
-            <TextInput style={styles.input} value={editName} onChangeText={setEditName} />
-            <TextInput
-              style={styles.input}
-              value={editPrice}
-              onChangeText={setEditPrice}
-              keyboardType="numeric"
-            />
-            <TextInput style={styles.input} value={editCategory} onChangeText={setEditCategory} />
-            <TextInput
-              style={styles.input}
-              value={editStockCount}
-              onChangeText={setEditStockCount}
-              keyboardType="numeric"
-            />
-            <Button title="Save" onPress={() => void handleSaveEdit(item)} />
-            <Button title="Cancel" onPress={() => setEditingSkuId(null)} />
+  const productCard = (item: SkuItem) => {
+    if (editingSkuId === item.sku_id) {
+      return (
+        <View key={item.sku_id} style={[styles.card, styles.productCard, isTablet && styles.productCardTablet]}>
+          <Field label="Name" value={editName} onChangeText={setEditName} />
+          <Field label="Price (₹)" value={editPrice} onChangeText={setEditPrice} keyboardType="numeric" />
+          <Field label="Category" value={editCategory} onChangeText={setEditCategory} />
+          <Field label="Stock" value={editStockCount} onChangeText={setEditStockCount} keyboardType="numeric" />
+          <View style={styles.actionRow}>
+            <PrimaryButton label="Save" variant="indigo" size="md" style={styles.flexBtn} onPress={() => void handleSaveEdit(item)} />
+            <Pressable style={styles.ghostBtn} onPress={() => setEditingSkuId(null)}>
+              <Text style={styles.ghostBtnText}>Cancel</Text>
+            </Pressable>
           </View>
-        ) : (
-          <View style={styles.row}>
-            <Text style={styles.itemText}>
-              {item.name} — ₹{item.price} — {item.category} — stock: {item.stock_count ?? 0}
-            </Text>
-            <Button title="Add" onPress={() => void handleAddToBasket(item)} />
-            <Button title="Edit" onPress={() => startEdit(item)} />
-            <Button title="Delete" onPress={() => void handleDelete(item.sku_id)} />
+        </View>
+      );
+    }
+    return (
+      <View key={item.sku_id} style={[styles.card, styles.productCard, isTablet && styles.productCardTablet]}>
+        <View style={styles.productTop}>
+          <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.productPrice}>₹{item.price.toLocaleString('en-IN')}</Text>
+        </View>
+        <View style={styles.metaRow}>
+          <View style={styles.categoryChip}>
+            <Text style={styles.categoryChipText}>{item.category}</Text>
           </View>
-        )
-      }
-    />
+          <Text style={styles.stock}>Stock {item.stock_count ?? 0}</Text>
+        </View>
+        <View style={styles.actionRow}>
+          <PrimaryButton
+            label={added === item.sku_id ? 'Added ✓' : 'Add to basket'}
+            variant={added === item.sku_id ? 'dark' : 'amber'}
+            size="md"
+            style={styles.flexBtn}
+            onPress={() => void handleAddToBasket(item)}
+          />
+          <Pressable style={styles.ghostBtn} onPress={() => startEdit(item)}>
+            <Text style={styles.ghostBtnText}>Edit</Text>
+          </Pressable>
+          <Pressable style={styles.iconBtn} onPress={() => void handleDelete(item.sku_id)}>
+            <Text style={styles.iconBtnText}>🗑</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
+  const list = (
+    <View style={isTablet ? styles.listColumnTablet : undefined}>
+      {skus.length === 0 ? (
+        <View style={[styles.card, styles.emptyCard]}>
+          <Text style={styles.emptyText}>No products yet. Add one to start scanning.</Text>
+        </View>
+      ) : (
+        <View style={styles.grid}>{skus.map(productCard)}</View>
+      )}
+    </View>
   );
 
   return (
-    <View style={[styles.container, isTablet && styles.containerTablet]}>
-      <Text style={styles.title}>Catalog</Text>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.header}>
+        <Eyebrow>U2 · Self-checkout</Eyebrow>
+        <Text style={styles.title}>Catalog</Text>
+        <Text style={styles.subtitle}>Manage inventory and add items to the basket.</Text>
+      </View>
 
       {error ? (
         <View style={styles.errorRow}>
           <Text style={styles.error}>{error}</Text>
-          <Button title="Retry" onPress={() => void loadSkus()} />
+          <Pressable onPress={() => void loadSkus()}>
+            <Text style={styles.retry}>Retry</Text>
+          </Pressable>
         </View>
       ) : null}
 
       {isTablet ? (
-        // Tablet: form on the left, SKU list alongside it on the right.
         <View style={styles.bodyTablet}>
-          {formContent}
-          {listElement}
+          {form}
+          {list}
         </View>
       ) : (
-        // Phone: unchanged — form stacked above the list.
         <>
-          {formContent}
-          {listElement}
+          {form}
+          {list}
         </>
       )}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-    gap: 12,
-  },
-  containerTablet: {
-    paddingHorizontal: TABLET_H_PADDING,
-  },
-  bodyTablet: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 24,
-  },
-  formColumnTablet: {
-    flex: 1,
-  },
-  listColumnTablet: {
-    flex: 2,
+  screen: { flex: 1, backgroundColor: Palette.canvas },
+  scrollContent: {
+    padding: SCREEN_GUTTER,
+    gap: Space.xl,
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: Space.md,
+    backgroundColor: Palette.canvas,
   },
-  title: {
-    fontSize: 20,
+  muted: { color: Palette.inkSecondary },
+  header: { gap: 2 },
+  title: { fontSize: Type.title, fontWeight: '800', color: Palette.ink },
+  subtitle: { fontSize: Type.bodySmall, color: Palette.inkSecondary },
+  bodyTablet: {
+    flexDirection: 'row',
+    gap: Space.xl,
+    alignItems: 'flex-start',
+  },
+  card: {
+    backgroundColor: Palette.card,
+    borderRadius: Radius.lg,
+    padding: Space.xl,
+    ...cardShadow,
+  },
+  formCard: { gap: Space.md },
+  formColumnTablet: { flex: 1, maxWidth: 360 },
+  listColumnTablet: { flex: 2 },
+  cardTitle: {
+    fontSize: Type.heading,
+    fontWeight: '700',
+    color: Palette.ink,
+    marginBottom: Space.xs,
+  },
+  field: { gap: 4 },
+  fieldLabel: {
+    fontSize: Type.caption,
+    color: Palette.inkSecondary,
     fontWeight: '600',
   },
-  addForm: {
-    gap: 8,
-  },
   input: {
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    flexShrink: 1,
+    borderWidth: 1.5,
+    borderColor: Palette.border,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Space.md,
+    paddingVertical: Space.md,
+    fontSize: Type.body,
+    color: Palette.ink,
+    backgroundColor: Palette.cardMuted,
   },
-  row: {
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Space.lg,
+  },
+  productCard: { gap: Space.md },
+  productCardTablet: {
+    flexGrow: 1,
+    flexBasis: 280,
+    maxWidth: '100%',
+  },
+  productTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  productName: {
+    flex: 1,
+    fontSize: Type.body,
+    fontWeight: '700',
+    color: Palette.ink,
+  },
+  productPrice: {
+    fontSize: Type.heading,
+    fontWeight: '800',
+    color: Palette.ink,
+  },
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
+    gap: Space.md,
   },
-  itemText: {
-    flex: 1,
+  categoryChip: {
+    backgroundColor: Palette.indigoSoft,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Space.md,
+    paddingVertical: 4,
   },
-  empty: {
-    paddingVertical: 16,
+  categoryChipText: {
+    fontSize: Type.micro,
+    fontWeight: '700',
+    color: Palette.indigoInk,
   },
+  stock: {
+    fontSize: Type.caption,
+    color: Palette.inkMuted,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.sm,
+  },
+  flexBtn: { flex: 1 },
+  ghostBtn: {
+    paddingHorizontal: Space.lg,
+    paddingVertical: Space.md,
+    borderRadius: Radius.pill,
+    borderWidth: 1.5,
+    borderColor: Palette.borderStrong,
+  },
+  ghostBtnText: {
+    fontSize: Type.bodySmall,
+    fontWeight: '600',
+    color: Palette.inkSecondary,
+  },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Palette.cardMuted,
+  },
+  iconBtnText: { fontSize: Type.body },
+  emptyCard: { alignItems: 'center' },
+  emptyText: { color: Palette.inkMuted, fontSize: Type.body },
   errorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
+    backgroundColor: Palette.dangerSoft,
+    borderRadius: Radius.sm,
+    padding: Space.md,
   },
-  error: {
-    color: 'red',
-    flex: 1,
-  },
+  error: { color: Palette.danger, flex: 1, fontSize: Type.bodySmall },
+  retry: { color: Palette.danger, fontWeight: '700' },
 });
