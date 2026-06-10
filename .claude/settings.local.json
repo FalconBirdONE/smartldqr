@@ -12,7 +12,8 @@
       "PowerShell(npx tsc --noEmit -p tsconfig.json)",
       "PowerShell(npx expo lint)",
       "PowerShell(npm run *)",
-      "PowerShell(git *)"
+      "PowerShell(git *)",
+      "PowerShell(npx expo install expo-camera)"
     ]
   }
 }

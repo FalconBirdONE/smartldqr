@@ -20,25 +20,26 @@ const MODES: Mode[] = [
   {
     code: 'U2 · SELF-CHECKOUT',
     title: 'Scan & pay',
-    sub: 'Add items, then tap or scan to pay',
+    sub: 'Scan items with the camera, then pay',
     icon: '🛒',
-    href: '/catalog',
+    // Cast: the /capture and /qsr routes are real but the typed-routes
+    // manifest only picks them up once Expo regenerates it (next
+    // `expo start`/build).
+    href: '/capture' as Href,
   },
   {
     code: 'U4 · QSR SELF-ORDER',
     title: 'Order food',
-    sub: 'Browse the menu · UPI Lite ready',
+    sub: 'Browse the menu · pay any way',
     icon: '🍜',
-    // Cast: the /qsr routes are real but the typed-routes manifest only picks
-    // them up once Expo regenerates it (next `expo start`/build).
     href: '/qsr' as Href,
   },
   {
     code: 'U1 · CASHIER-LED',
     title: 'Pay your bill',
-    sub: 'Cashier sends the bill here',
+    sub: 'Cashier scans your items here',
     icon: '🧾',
-    href: '/checkout',
+    href: '/capture' as Href,
   },
 ];
 
@@ -73,7 +74,7 @@ export default function HomeScreen() {
         </View>
 
         {basketCount > 0 ? (
-          <Pressable style={styles.resume} onPress={() => router.push('/checkout')}>
+          <Pressable style={styles.resume} onPress={() => router.push('/capture' as Href)}>
             <View>
               <Text style={styles.resumeTitle}>Resume your basket</Text>
               <Text style={styles.resumeSub}>
@@ -98,6 +99,11 @@ export default function HomeScreen() {
 
         <View style={styles.footerNote}>
           <TrustChip label="UPI · UPI Lite · Credit Line on UPI" tone="light" icon="✓" />
+          <Pressable onPress={() => router.push('/catalog')} hitSlop={8}>
+            <Text style={[styles.catalogLink, { color: brand.onBrandMuted }]}>
+              Manage catalog ›
+            </Text>
+          </Pressable>
         </View>
       </ScrollView>
     </BrandCanvas>
@@ -205,5 +211,10 @@ const styles = StyleSheet.create({
   footerNote: {
     alignItems: 'center',
     marginTop: Space.sm,
+    gap: Space.md,
+  },
+  catalogLink: {
+    fontSize: Type.caption,
+    fontWeight: '600',
   },
 });

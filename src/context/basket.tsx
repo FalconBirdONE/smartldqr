@@ -26,6 +26,9 @@ type BasketValue = {
   hydrated: boolean;
   error: string | null;
   addItem: (sku: Partial<SkuItem>) => Promise<void>;
+  /** Set a line's quantity; 0 removes the line. */
+  updateQuantity: (basketId: string, quantity: number) => Promise<void>;
+  removeItem: (basketId: string) => Promise<void>;
   clearBasket: () => Promise<void>;
   refresh: () => Promise<void>;
 };
@@ -91,6 +94,22 @@ export function BasketProvider({ children }: PropsWithChildren) {
     [refresh]
   );
 
+  const updateQuantity = useCallback(
+    async (basketId: string, quantity: number) => {
+      await BasketStore.updateItemQuantity(basketId, quantity);
+      await refresh();
+    },
+    [refresh]
+  );
+
+  const removeItem = useCallback(
+    async (basketId: string) => {
+      await BasketStore.removeItem(basketId);
+      await refresh();
+    },
+    [refresh]
+  );
+
   const clearBasket = useCallback(async () => {
     await BasketStore.clearBasket();
     await refresh();
@@ -104,10 +123,12 @@ export function BasketProvider({ children }: PropsWithChildren) {
       hydrated,
       error,
       addItem,
+      updateQuantity,
+      removeItem,
       clearBasket,
       refresh,
     }),
-    [items, total, hydrated, error, addItem, clearBasket, refresh]
+    [items, total, hydrated, error, addItem, updateQuantity, removeItem, clearBasket, refresh]
   );
 
   return <BasketContext.Provider value={value}>{children}</BasketContext.Provider>;

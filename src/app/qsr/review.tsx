@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useRouter, type Href } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -8,42 +7,39 @@ import { TrustChip } from '@/components/ldqr/trust-chip';
 import { cardShadow, Palette, Radius, SCREEN_GUTTER, Space, Type, UPI_LITE_LIMIT } from '@/constants/design';
 import { REVIEW_UPSELLS } from '@/constants/qsr-menu';
 import { lineNote, lineUnitPrice, useQsrOrder } from '@/context/qsr-order';
-import { TransactionStore } from '@/services/transaction-store';
+import type { CheckoutLine } from '@/types/checkout';
 
 const TIPS = [0, 10, 20, 30];
 
 export default function QsrReview() {
   const router = useRouter();
   const order = useQsrOrder();
-  const [paying, setPaying] = useState(false);
 
   const isLite = order.total > 0 && order.total < UPI_LITE_LIMIT;
 
-  const pay = async () => {
+  // Billing is done once the total below is computed; hand the order to the
+  // unified checkout stub as a basket. No payment-method gating here — every
+  // method is available there, not just UPI Lite.
+  const checkout = () => {
     if (order.itemCount === 0) return;
-    setPaying(true);
-    try {
-      await TransactionStore.logTransaction({
-        total_amount: order.total,
-        payment_method: isLite ? 'UPI Lite' : 'UPI',
-        basket_snapshot: JSON.stringify(order.lines),
-        item_count: order.itemCount,
-      });
-      const tokenNum = 10 + (order.total % 90);
-      const token = `A-${tokenNum}`;
-      order.clear();
-      router.replace({
-        pathname: '/qsr/token',
-        params: {
-          token,
-          total: String(order.total),
-          method: isLite ? 'UPI Lite' : 'UPI',
-          dine: order.dineIn ? 'in' : 'out',
-        },
-      } as unknown as Href);
-    } finally {
-      setPaying(false);
+    const lines: CheckoutLine[] = order.lines.map((l) => ({
+      id: l.lineId,
+      name: l.item.name,
+      quantity: l.qty,
+      unit_price: lineUnitPrice(l),
+      subtotal: lineUnitPrice(l) * l.qty,
+      note: lineNote(l),
+    }));
+    if (order.packing > 0) {
+      lines.push({ id: 'packing', name: 'Packing', quantity: 1, unit_price: order.packing, subtotal: order.packing });
     }
+    if (order.tip > 0) {
+      lines.push({ id: 'tip', name: 'Tip', quantity: 1, unit_price: order.tip, subtotal: order.tip });
+    }
+    router.push({
+      pathname: '/checkout-stub',
+      params: { source: 'qsr', total: String(order.total), basket: JSON.stringify(lines) },
+    } as unknown as Href);
   };
 
   return (
@@ -156,12 +152,11 @@ export default function QsrReview() {
           <Text style={styles.payTotal}>₹{order.total}</Text>
         </View>
         <PrimaryButton
-          label={isLite ? 'Pay with UPI Lite' : 'Pay with UPI'}
-          subLabel={isLite ? 'No PIN needed' : 'Secure UPI'}
-          variant={isLite ? 'teal' : 'amber'}
-          loading={paying}
+          label="Continue to checkout"
+          subLabel="Pay any way you like"
+          variant="amber"
           disabled={order.itemCount === 0}
-          onPress={() => void pay()}
+          onPress={checkout}
           style={styles.payBtn}
         />
       </View>

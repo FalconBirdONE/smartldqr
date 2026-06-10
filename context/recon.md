@@ -1,49 +1,48 @@
 # LDQR recon manifest
 
-> Updated 2026-06-10, after the nav/basket refactor (bottom nav removed, basket lifted to a root provider, floating Settings button added). Re-run P0 only if files or routes structurally change again.
+> Updated 2026-06-10 (second pass), after the CaptureCheckout refactor: shared camera/scanner capture screen for U1/U2, unified checkout stub, U4 re-routed to it. Re-run P0 only if files or routes structurally change again.
 
 ## 1. Root container + navigator config
 
 - `src/app/_layout.tsx` — root layout: `MerchantSetupProvider` → `BrandProvider` → `BasketProvider` → `ThemeProvider` → headerless `Stack` (`onboarding`, `(tabs)`, `qsr`) with the floating `SettingsButton` overlaid top-right.
-- `src/app/(tabs)/_layout.tsx` — onboarding gate + headerless `Stack`. **No bottom tab bar** (the `NativeTabs` bar was removed; screens navigate programmatically).
+- `src/app/(tabs)/_layout.tsx` — onboarding gate + headerless `Stack`. **No bottom tab bar**; navigation is programmatic.
 - `src/app/qsr/_layout.tsx` — `QsrOrderProvider` + `Stack` (`index` → `menu` → `review` → `token`).
-- Bottom-nav/sidebar components mounted at container level: **none**. `src/components/ldqr/persistent-footer.tsx` is a payment-rail footer that mounts only inside `CheckoutScreen` (screen-internal payment UI, not navigation).
+- Bottom-nav/sidebar components mounted at container level: **none**. `src/components/ldqr/persistent-footer.tsx` mounts only inside the parked `CheckoutScreen` (payment UI, not navigation).
 
 ## 2. Modules
 
-- **U1 · Cashier-led** — entry `src/screens/CheckoutScreen.tsx`, route `/checkout` (`src/app/(tabs)/checkout.tsx`). Flow: basket → QR / Tap & Pay → UPI-Lite or palm/PIN gate → `/confirmation`. Renders `QrCard`, `TapAndPayZone`, `BasketPanel`, `EmiBanner`/`EmiTray`, `LoyaltyCard`, `PalmConfirm`, `PersistentFooter`.
-- **U2 · Self-checkout** — entry `src/screens/CatalogScreen.tsx`, route `/catalog`. SKU CRUD (SQLite `SkuStore`) + add-to-basket; checkout happens via U1's screen.
-- **U4 · QSR self-order** — entry `src/app/qsr/index.tsx`, routes `/qsr` → `/qsr/menu` → `/qsr/review` → `/qsr/token`. Order state in `src/context/qsr-order.tsx` (in-memory, separate from the retail basket by design).
-- Mode select — `src/screens/HomeScreen.tsx`, route `/` (`src/app/(tabs)/index.tsx`): mode cards + "Resume your basket" card.
+- **U1 · Cashier-led** — Home card routes to `/capture` (shared `CaptureCheckout`). The old straight-to-payment entry (`/checkout`) is fixed: nothing routes to `/checkout` anymore.
+- **U2 · Self-checkout** — Home card routes to `/capture` as well. Catalog CRUD (`/catalog`, `src/screens/CatalogScreen.tsx`) is now an admin surface only, reachable via the "Manage catalog" link on Home.
+- **U4 · QSR self-order** — `/qsr` → `/qsr/menu` → `/qsr/review`; review's CTA now serializes the order (+ packing/tip lines) and routes to `/checkout-stub` (no UPI-Lite-only gating, no transaction logging there). `qsr/token.tsx` is currently unreferenced — payment matrix will re-wire completion.
+- Mode select — `src/screens/HomeScreen.tsx` (`/`): mode cards, "Resume your basket" → `/capture`, "Manage catalog" link.
 
-## 3. Basket / queue state
+## 3. Capture / scanner (shared)
 
-- `src/context/basket.tsx` — **single top-level owner** (`BasketProvider`, mounted in the root layout). Hydrates once from SQLite on mount; `addItem`/`clearBasket` write through to `src/services/basket-store.ts` (`basket_items` table via `src/services/db.ts`, db `ldqr.db`). Shape: `BasketItem` (`src/types/basket.ts`) — unchanged.
-- "Resume basket": rows persist in SQLite, so the card on Home survives navigation, re-renders, and app restarts. Home/Catalog/Checkout read via `useBasket()`; nothing reads `BasketStore` directly except the provider.
-- QSR queue: `src/context/qsr-order.tsx` — in-memory only, U4-internal.
+- `src/components/ldqr/capture-checkout.tsx` — the one shared capture surface (no per-module copies). Tablet quadrants: camera + HUD left; live basket right with inline qty steppers + delete; "Cancel checkout" top-right (beside the global Settings gear); "Confirm checkout" bottom-right → `/checkout-stub` with `{ source, total, basket }` params. Phone stacks the panes.
+- `src/hooks/use-barcode-scanner.ts` — scanner pipeline: requests permission on mount, continuous decode via `expo-camera` `CameraView` `onBarcodeScanned`, duplicate-read debounce (2s cooldown), auto-reset after each scan.
+- Scan resolution: code → `SkuStore.getSkuById`, fallback exact name match → `useBasket().addItem` (direct append, no staging).
+- Camera lib: **expo-camera** (SDK 56, Expo Go compatible). No vision-camera. App.json has no camera plugin entry yet — fine for Expo Go; a dev build will want the plugin/permission strings.
 
-## 4. Camera / scanner
+## 4. Basket / queue state
 
-- None. No camera or barcode library is installed. QR is render-only via `react-native-qrcode-svg` (`src/components/ldqr/qr-card.tsx`); "scan" is simulated.
+- `src/context/basket.tsx` — single top-level owner. Hydrates from SQLite; `addItem` / `updateQuantity` (0 ⇒ remove) / `removeItem` / `clearBasket` write through to `src/services/basket-store.ts` (`basket_items` in `ldqr.db` via `db.ts`). Shape `BasketItem` unchanged.
+- QSR queue: `src/context/qsr-order.tsx` — in-memory, U4-internal; serialized to `CheckoutLine[]` only at the stub handoff.
+- `src/types/checkout.ts` — `CheckoutLine`, the module-agnostic line shape passed to the stub.
 
 ## 5. Checkout / payment
 
-- `src/screens/CheckoutScreen.tsx` — all rails simulated; `TransactionStore.logTransaction` writes to SQLite.
-- UPI-Lite gating: `total < UPI_LITE_LIMIT` (₹500, `src/constants/design.ts`) skips the palm/PIN gate.
-- Pay@Palm: `src/components/ldqr/palm-confirm.tsx` — **stubbed** (confirm overlay, no biometrics; UPI-PIN fallback offered).
-- EMI / Credit Line on UPI: `src/components/ldqr/emi.tsx` — **stubbed** tray; threshold `EMI_THRESHOLD` = ₹3000.
-- Tap & Pay: `src/components/ldqr/tap-and-pay-zone.tsx` — **stubbed** (timer-driven detect/read states).
-- U4 payment: `src/app/qsr/review.tsx` — UPI-Lite-only framing (`isLite` under ₹500, else plain UPI), simulated `pay()` → token screen. Real rails: none anywhere.
+- `src/app/(tabs)/checkout-stub.tsx` — **the unified checkout STUB**: renders the received basket + total and the full ungated payment-method set (UPI QR, Tap & Pay, UPI Lite, Pay@Palm, Credit Line/EMI, Loyalty). No charging, no logging. The payment matrix replaces its method grid next phase.
+- `src/screens/CheckoutScreen.tsx` (`/checkout`) — the old simulated payment screen (QR, Tap & Pay, Palm, EMI tray, PersistentFooter). **Parked, unrouted, untouched** — source material for the payment matrix.
+- All rails remain stubbed; `TransactionStore` is currently only used by the parked screen.
 
 ## 6. Settings
 
-- Screen: `src/screens/SettingsScreen.tsx`, route `/settings` (`src/app/(tabs)/settings.tsx`) — brand theming, compliance list, reset device setup.
-- Entry point: `src/components/ldqr/settings-button.tsx` — floating button fixed top-right, mounted once in the root layout, present on every module screen; hidden on `/onboarding` and `/settings`.
+- Screen: `src/screens/SettingsScreen.tsx` (`/settings`). Entry: `src/components/ldqr/settings-button.tsx` — floating, top-right, every module screen (hidden on `/onboarding` and `/settings`).
 
 ## Refactor risk notes
 
-- The basket is now owned by `BasketProvider`; any new basket mutation must go through `useBasket()` (or call `refresh()`), or context state will drift from SQLite.
-- Back navigation relies on the root/group Stacks; with the tab bar gone, every new screen needs an explicit route into it (Home mode cards, CTAs, or the Settings button).
-- `PersistentFooter` looks like navigation but is payment UI inside CheckoutScreen — do not "deduplicate" it into a navigator.
-- U4's queue is intentionally separate from the retail basket; do not merge the two stores.
-- `npx expo lint` has one pre-existing error in `src/hooks/use-color-scheme.web.ts` (Expo template); unrelated to app code.
+- All basket mutations must go through `useBasket()`; direct `BasketStore` writes will drift from context state.
+- `/checkout` (old payment screen) and `/qsr/token` are intentionally orphaned routes pending the payment matrix — don't delete without checking that phase's plan.
+- New routes `/capture` and `/checkout-stub` are cast `as Href` until Expo regenerates the typed-routes manifest (next `expo start`).
+- The stub trusts its `basket` param; the payment matrix should re-validate totals server-side/store-side before charging.
+- `npx expo lint` has one pre-existing error in `src/hooks/use-color-scheme.web.ts` (Expo template); unrelated.
