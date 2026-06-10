@@ -1,6 +1,6 @@
 # LDQR recon manifest
 
-> Updated 2026-06-10 (second pass), after the CaptureCheckout refactor: shared camera/scanner capture screen for U1/U2, unified checkout stub, U4 re-routed to it. Re-run P0 only if files or routes structurally change again.
+> Updated 2026-06-10 (third pass), after the unified-checkout build: the P2 stub was replaced by the real payment-matrix screen (route path `/checkout-stub` kept so U1/U2/U4 callers were untouched). Re-run P0 only if files or routes structurally change again.
 
 ## 1. Root container + navigator config
 
@@ -31,9 +31,11 @@
 
 ## 5. Checkout / payment
 
-- `src/app/(tabs)/checkout-stub.tsx` — **the unified checkout STUB**: renders the received basket + total and the full ungated payment-method set (UPI QR, Tap & Pay, UPI Lite, Pay@Palm, Credit Line/EMI, Loyalty). No charging, no logging. The payment matrix replaces its method grid next phase.
-- `src/screens/CheckoutScreen.tsx` (`/checkout`) — the old simulated payment screen (QR, Tap & Pay, Palm, EMI tray, PersistentFooter). **Parked, unrouted, untouched** — source material for the payment matrix.
-- All rails remain stubbed; `TransactionStore` is currently only used by the parked screen.
+- `src/screens/UnifiedCheckoutScreen.tsx` (route `src/app/(tabs)/checkout-stub.tsx`, path `/checkout-stub`) — **the real unified checkout**: order summary from the passed `CheckoutLine[]` + full ungated payment matrix (UPI Lite, Cards, NetBanking, Wallets, Pay@Palm, EMI). Every method funnels into one `completePayment` (simulated 900ms rail → `TransactionStore.logTransaction` → clears the retail basket when `source==='retail'` → `/confirmation`); all failures are caught into an error banner, UI stays alive.
+- `src/services/palm-auth.ts` — SIMULATED Pay@Palm SDK surface: `authorizePalm()` resolves `{status:'authorised', authToken}` or throws coded `PalmAuthError` (~18% simulated misreads). A real palm dev kit replaces only this module's body. UI capture overlay reuses `palm-confirm.tsx`; skip = UPI-PIN fallback.
+- `src/services/emi.ts` — guarded EMI engine: `EMI_LENDERS` interest tables (APR per tenure), `buildEmiMatrix` term matrix (3/6/9/12 mo; reducing-balance formula, null on unquotable inputs — never NaN), `buildLenderPayload` mock (`mock: true`, schedule + KFS ref) until a provider is wired.
+- `src/screens/CheckoutScreen.tsx` (`/checkout`) — the OLD simulated payment screen (QR, Tap & Pay, PersistentFooter, `emi.tsx` tray). Still parked and unrouted; superseded by the unified checkout. Candidate for deletion once the QR/Tap rails are ported.
+- U4 completion: the unified checkout cannot clear the QSR order (its provider is scoped to `/qsr`); `/qsr/token` remains unreferenced.
 
 ## 6. Settings
 
