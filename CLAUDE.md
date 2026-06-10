@@ -4,6 +4,10 @@
 
 ## Project
 
+## LDQR Refactor Context
+- Before any refactor task, read context/recon.md for the current file manifest.
+- Only re-run P0 and update context/recon.md if files or routes have structurally changed.
+
 A local-first **merchant point-of-sale (POS)** app for small retailers. The flow:
 
 1. **Onboarding** — a merchant enters their details (`merchant_name`, `business_name`, `category`, `upi_id`). Completing it unlocks the app; the gate persists so it only runs once.

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -12,14 +12,15 @@ import { QrCard } from '@/components/ldqr/qr-card';
 import { SplitLayout } from '@/components/ldqr/split-layout';
 import { TapAndPayZone, type TapState } from '@/components/ldqr/tap-and-pay-zone';
 import { TrustChip } from '@/components/ldqr/trust-chip';
+import { useBasket } from '@/context/basket';
 import { useBrand } from '@/context/brand';
 import { EMI_THRESHOLD, Palette, Space, Type, UPI_LITE_LIMIT } from '@/constants/design';
-import { BasketStore } from '@/services/basket-store';
 import { TransactionStore } from '@/services/transaction-store';
-import type { BasketItem } from '@/types/basket';
 
-// UUID-shaped value for the simulated QR — not a real payment URI in this phase.
-const generateSimulatedQrValue = (): string =>
+// UUID-shaped value for the simulated QR — not a real payment URI in this
+// phase. The basket argument only marks that a fresh code is derived per
+// basket revision.
+const generateSimulatedQrValue = (_basket?: unknown): string =>
   'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = Math.floor(Math.random() * 16);
     const v = c === 'x' ? r : (r % 4) + 8;
@@ -33,11 +34,12 @@ export default function CheckoutScreen() {
   const router = useRouter();
   const { brand } = useBrand();
 
-  const [items, setItems] = useState<BasketItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [qrValue, setQrValue] = useState(generateSimulatedQrValue);
-  const [loading, setLoading] = useState(true);
+  const { items, total, hydrated, error: basketError, clearBasket } = useBasket();
   const [error, setError] = useState<string | null>(null);
+
+  // QR auto-refreshes as the basket changes: a fresh simulated value per
+  // basket revision.
+  const qrValue = useMemo(() => generateSimulatedQrValue(items), [items]);
 
   // Payment journey state.
   const [tapState, setTapState] = useState<TapState>('idle');
@@ -49,29 +51,10 @@ export default function CheckoutScreen() {
   const methodRef = useRef<string>('UPI');
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  const loadBasket = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [basketItems, basketTotal] = await Promise.all([
-        BasketStore.getBasketItems(),
-        BasketStore.getBasketTotal(),
-      ]);
-      setItems(basketItems);
-      setTotal(basketTotal);
-      setQrValue(generateSimulatedQrValue()); // QR auto-refreshes as basket changes
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load basket.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useFocusEffect(
     useCallback(() => {
-      void loadBasket();
       return () => timers.current.forEach(clearTimeout);
-    }, [loadBasket])
+    }, [])
   );
 
   const eligibleEmi = total >= EMI_THRESHOLD;
@@ -93,7 +76,7 @@ export default function CheckoutScreen() {
           basket_snapshot: JSON.stringify(items),
           item_count: items.reduce((sum, it) => sum + it.quantity, 0),
         });
-        await BasketStore.clearBasket();
+        await clearBasket();
         router.replace({
           pathname: '/confirmation',
           params: {
@@ -114,7 +97,7 @@ export default function CheckoutScreen() {
         setShowPalm(false);
       }
     },
-    [items, total, loyaltyJoined, router]
+    [items, total, loyaltyJoined, clearBasket, router]
   );
 
   // After the rail authorises, gate on biometrics: UPI Lite skips the PIN/palm
@@ -144,7 +127,7 @@ export default function CheckoutScreen() {
     );
   }, [tapState, items.length, authGate]);
 
-  if (loading) {
+  if (!hydrated) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={Palette.indigo} />
@@ -252,7 +235,7 @@ export default function CheckoutScreen() {
         }
       />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ?? basketError ? <Text style={styles.error}>{error ?? basketError}</Text> : null}
 
       <EmiTray
         visible={emiTrayOpen}

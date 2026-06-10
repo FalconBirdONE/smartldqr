@@ -13,8 +13,8 @@ import {
 import { Eyebrow } from '@/components/ldqr/eyebrow';
 import { PrimaryButton } from '@/components/ldqr/primary-button';
 import { cardShadow, Palette, Radius, SCREEN_GUTTER, Space, Type } from '@/constants/design';
+import { useBasket } from '@/context/basket';
 import { useResponsive } from '@/hooks/use-responsive';
-import { BasketStore } from '@/services/basket-store';
 import { SkuStore } from '@/services/sku-store';
 import type { SkuItem } from '@/types/sku';
 
@@ -36,6 +36,7 @@ function Field({
 
 export default function CatalogScreen() {
   const { isTablet } = useResponsive();
+  const { addItem } = useBasket();
   const [skus, setSkus] = useState<SkuItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -120,7 +121,7 @@ export default function CatalogScreen() {
   const handleAddToBasket = async (item: SkuItem) => {
     setError(null);
     try {
-      await BasketStore.addItem(item);
+      await addItem(item);
       setAdded(item.sku_id);
       setTimeout(() => setAdded((cur) => (cur === item.sku_id ? null : cur)), 1200);
     } catch (e) {

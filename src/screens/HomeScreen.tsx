@@ -1,13 +1,12 @@
-import { useCallback, useState } from 'react';
-import { useFocusEffect, useRouter, type Href } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BrandCanvas } from '@/components/ldqr/brand-canvas';
 import { Eyebrow } from '@/components/ldqr/eyebrow';
 import { TrustChip } from '@/components/ldqr/trust-chip';
 import { Palette, Radius, Space, Type } from '@/constants/design';
+import { useBasket } from '@/context/basket';
 import { useBrand } from '@/context/brand';
-import { BasketStore } from '@/services/basket-store';
 
 type Mode = {
   code: string;
@@ -46,27 +45,7 @@ const MODES: Mode[] = [
 export default function HomeScreen() {
   const router = useRouter();
   const { brand } = useBrand();
-  const [basketCount, setBasketCount] = useState(0);
-  const [basketTotal, setBasketTotal] = useState(0);
-
-  const refresh = useCallback(async () => {
-    try {
-      const [items, total] = await Promise.all([
-        BasketStore.getBasketItems(),
-        BasketStore.getBasketTotal(),
-      ]);
-      setBasketCount(items.reduce((n, it) => n + it.quantity, 0));
-      setBasketTotal(total);
-    } catch {
-      // Idle screen tolerates a missing basket silently.
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      void refresh();
-    }, [refresh])
-  );
+  const { itemCount: basketCount, total: basketTotal } = useBasket();
 
   return (
     <BrandCanvas brand={brand}>
