@@ -1,6 +1,7 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 
 import { Eyebrow } from '@/components/ldqr/eyebrow';
 import { PalmConfirm } from '@/components/ldqr/palm-confirm';
@@ -20,20 +21,39 @@ import { authorizePalm, PalmAuthError } from '@/services/palm-auth';
 import { TransactionStore } from '@/services/transaction-store';
 import type { CheckoutLine } from '@/types/checkout';
 
-type MethodKey = 'lite' | 'card' | 'netbanking' | 'wallet' | 'palm' | 'emi';
+type MethodKey = 'lite' | 'rupay' | 'palm' | 'emi';
 
 const METHODS: { key: MethodKey; icon: string; label: string; sub: string }[] = [
   { key: 'lite', icon: '⚡', label: 'UPI Lite', sub: 'No PIN under ₹500' },
-  { key: 'card', icon: '💳', label: 'Cards', sub: 'Credit · debit' },
-  { key: 'netbanking', icon: '🏦', label: 'NetBanking', sub: 'All major banks' },
-  { key: 'wallet', icon: '👛', label: 'Wallets', sub: 'Paytm · PhonePe…' },
+  { key: 'rupay', icon: '💳', label: 'Pay using RuPay', sub: 'Credit · debit' },
   { key: 'palm', icon: '🖐️', label: 'Pay@Palm', sub: 'Biometric · on-device' },
   { key: 'emi', icon: '%', label: 'EMI', sub: 'Split the bill' },
 ];
 
-const BANKS = ['HDFC Bank', 'ICICI Bank', 'SBI', 'Axis Bank'];
-const WALLETS = ['Paytm', 'PhonePe', 'Amazon Pay'];
-const SAVED_CARD = { label: 'HDFC Credit ••4291', network: 'Visa' };
+const RUPAY_CARD = { label: 'RuPay Credit ••8842', network: 'RuPay' };
+
+// ── Unified QR + UPI box ────────────────────────────────────────────────
+type UpiSub = 'standard' | 'lite' | 'litetap';
+
+const UPI_SUBS: { key: UpiSub; label: string; sub: string }[] = [
+  { key: 'standard', label: 'UPI Standard', sub: 'Scan with any UPI app' },
+  { key: 'lite', label: 'UPI LITE', sub: 'Low-value, no-PIN rail' },
+  { key: 'litetap', label: 'UPI LITE TAP', sub: 'Tap to pay · confirm below' },
+];
+
+const UPI_VPA = 'merchant@upi';
+const UPI_PN = 'MerchantName';
+
+/** Short txn-shaped id for the UPI note (tn=LDQR-{id}). */
+const makeTxnId = () => Math.random().toString(36).slice(2, 10).toUpperCase();
+
+/** Standard UPI intent. Built per-render (never memoised) so the QR stays live. */
+const buildUpiStandard = (total: number, txnId: string) =>
+  `upi://pay?pa=${UPI_VPA}&pn=${UPI_PN}&am=${total.toFixed(2)}&cu=INR&tn=LDQR-${txnId}`;
+
+/** UPI LITE intent — same target with the LITE-rail flags appended. */
+const buildUpiLite = (total: number, txnId: string) =>
+  `${buildUpiStandard(total, txnId)}&mode=lite&purpose=00&mc=5499`;
 
 /** Simulated rail latency — consistent with the simulated-QR flow's pacing. */
 const simulateRail = () => new Promise<void>((resolve) => setTimeout(resolve, 900));
@@ -70,9 +90,11 @@ export default function UnifiedCheckoutScreen() {
 
   // Method-pane state.
   const [palmVisible, setPalmVisible] = useState(false);
-  const [bank, setBank] = useState(BANKS[0]);
-  const [wallet, setWallet] = useState(WALLETS[0]);
   const [lenderId, setLenderId] = useState(EMI_LENDERS[0].id);
+
+  // Unified QR + UPI box state.
+  const [upiSub, setUpiSub] = useState<UpiSub>('standard');
+  const [txnId] = useState(makeTxnId);
   const [emiQuote, setEmiQuote] = useState<EmiQuote | null>(null);
   const [payload, setPayload] = useState<EmiLenderPayload | null>(null);
 
@@ -171,6 +193,20 @@ export default function UnifiedCheckoutScreen() {
     void completePayment('Pay@Palm · UPI PIN', { app: 'UPI PIN fallback' });
   }, [completePayment]);
 
+  // ── UPI box navigation ───────────────────────────────────────────────────
+  // UPI LITE / UPI LITE TAP each open a dedicated full-page flow, carrying the
+  // current bill so that page can log + confirm on its own.
+  const openUpiPage = useCallback(
+    (path: '/upi-lite' | '/upi-lite-tap') => {
+      // Cast: new routes; the typed-routes manifest picks them up on next regen.
+      router.push({
+        pathname: path,
+        params: { source, total: String(total), basket: JSON.stringify(lines) },
+      } as unknown as Href);
+    },
+    [router, source, total, lines]
+  );
+
   // ── EMI ───────────────────────────────────────────────────────────────
   const previewPayload = useCallback(() => {
     if (!lenderRow || !emiQuote) return;
@@ -233,66 +269,21 @@ export default function UnifiedCheckoutScreen() {
             />
           </View>
         );
-      case 'card':
+      case 'rupay':
         return (
           <View style={styles.pane}>
             <View style={styles.optionRowStatic}>
               <Text style={styles.optionEmoji}>💳</Text>
               <View style={styles.flex}>
-                <Text style={styles.optionTitle}>{SAVED_CARD.label}</Text>
-                <Text style={styles.optionSub}>{SAVED_CARD.network} · tap, insert or swipe on the reader</Text>
+                <Text style={styles.optionTitle}>{RUPAY_CARD.label}</Text>
+                <Text style={styles.optionSub}>{RUPAY_CARD.network} · tap, insert or swipe on the reader</Text>
               </View>
             </View>
             <PrimaryButton
-              label={`Charge ₹${total.toLocaleString('en-IN')} to card`}
+              label={`Charge ₹${total.toLocaleString('en-IN')} to RuPay`}
               variant="dark"
               disabled={processing}
-              onPress={() => void completePayment('Card', { app: 'POS reader', bank: SAVED_CARD.label })}
-            />
-          </View>
-        );
-      case 'netbanking':
-        return (
-          <View style={styles.pane}>
-            <View style={styles.chipRow}>
-              {BANKS.map((b) => (
-                <Pressable
-                  key={b}
-                  style={[styles.chip, bank === b && styles.chipActive]}
-                  onPress={() => setBank(b)}
-                >
-                  <Text style={[styles.chipText, bank === b && styles.chipTextActive]}>{b}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <PrimaryButton
-              label={`Continue to ${bank}`}
-              subLabel="Simulated bank handoff"
-              variant="indigo"
-              disabled={processing}
-              onPress={() => void completePayment('NetBanking', { app: 'NetBanking', bank })}
-            />
-          </View>
-        );
-      case 'wallet':
-        return (
-          <View style={styles.pane}>
-            <View style={styles.chipRow}>
-              {WALLETS.map((w) => (
-                <Pressable
-                  key={w}
-                  style={[styles.chip, wallet === w && styles.chipActive]}
-                  onPress={() => setWallet(w)}
-                >
-                  <Text style={[styles.chipText, wallet === w && styles.chipTextActive]}>{w}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <PrimaryButton
-              label={`Pay with ${wallet}`}
-              variant="amber"
-              disabled={processing}
-              onPress={() => void completePayment('Wallet', { app: wallet })}
+              onPress={() => void completePayment('RuPay', { app: 'POS reader', bank: RUPAY_CARD.label })}
             />
           </View>
         );
@@ -447,7 +438,7 @@ export default function UnifiedCheckoutScreen() {
   );
 
   const matrix = (
-    <View style={[styles.card, isTablet && styles.matrixTablet]}>
+    <View style={styles.card}>
       <Eyebrow color={Palette.indigo}>Payment matrix · all methods available</Eyebrow>
       <View style={styles.methodGrid}>
         {METHODS.map((m) => (
@@ -482,6 +473,73 @@ export default function UnifiedCheckoutScreen() {
     </View>
   );
 
+  // Live QR value for the unified box — recomputed every render (no memo) so it
+  // updates the instant the sub-option (or total) changes.
+  const upiQrValue =
+    upiSub === 'standard' ? buildUpiStandard(total, txnId) : buildUpiLite(total, txnId);
+
+  const upiBox = (
+    <View style={styles.card}>
+      <Eyebrow color={Palette.teal}>UPI · scan or tap to pay</Eyebrow>
+      <View style={[styles.upiBody, isTablet && styles.upiBodyRow]}>
+        {/* Left: live QR, regenerated per sub-option. */}
+        <View style={styles.qrSide}>
+          <View style={styles.qrFrame}>
+            <QRCode
+              key={upiQrValue}
+              value={upiQrValue}
+              size={168}
+              color={Palette.ink}
+              backgroundColor="#FFFFFF"
+            />
+          </View>
+          <Text style={styles.qrCaption}>
+            {upiSub === 'standard' ? 'UPI Standard QR' : 'UPI LITE QR'} · ₹
+            {total.toLocaleString('en-IN')}
+          </Text>
+        </View>
+
+        {/* Right: stacked, selectable sub-options. */}
+        <View style={styles.upiOptions}>
+          {UPI_SUBS.map((opt) => {
+            const active = upiSub === opt.key;
+            return (
+              <Pressable
+                key={opt.key}
+                style={[styles.upiOption, active && styles.upiOptionActive]}
+                onPress={() => setUpiSub(opt.key)}
+              >
+                <Text style={[styles.upiOptionLabel, active && styles.upiOptionLabelActive]}>
+                  {opt.label}
+                </Text>
+                <Text style={styles.upiOptionSub}>{opt.sub}</Text>
+              </Pressable>
+            );
+          })}
+
+          {upiSub === 'standard' ? (
+            <PrimaryButton
+              label="Simulate Payment"
+              variant="teal"
+              size="md"
+              disabled={processing}
+              onPress={() => void completePayment('UPI Standard', { app: 'UPI' })}
+            />
+          ) : (
+            <PrimaryButton
+              label={upiSub === 'lite' ? 'Open UPI LITE' : 'Open UPI LITE TAP'}
+              subLabel="Tap to Pay"
+              variant="teal"
+              size="md"
+              disabled={processing}
+              onPress={() => openUpiPage(upiSub === 'lite' ? '/upi-lite' : '/upi-lite-tap')}
+            />
+          )}
+        </View>
+      </View>
+    </View>
+  );
+
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -496,12 +554,16 @@ export default function UnifiedCheckoutScreen() {
         {isTablet ? (
           <View style={styles.bodyTablet}>
             {summary}
-            {matrix}
+            <View style={styles.rightCol}>
+              {matrix}
+              {upiBox}
+            </View>
           </View>
         ) : (
           <>
             {summary}
             {matrix}
+            {upiBox}
           </>
         )}
 
@@ -528,7 +590,7 @@ const styles = StyleSheet.create({
   bodyTablet: { flexDirection: 'row', gap: Space.lg, alignItems: 'flex-start' },
   card: { backgroundColor: Palette.card, borderRadius: Radius.lg, padding: Space.xl, ...cardShadow },
   summaryTablet: { flex: 1 },
-  matrixTablet: { flex: 1.4 },
+  rightCol: { flex: 1.4, gap: Space.lg },
   flex: { flex: 1 },
 
   line: {
@@ -653,6 +715,32 @@ const styles = StyleSheet.create({
   payloadMore: { fontSize: Type.micro, color: Palette.inkMuted, marginTop: Space.xs },
   emiActions: { flexDirection: 'row', gap: Space.md },
   kfs: { fontSize: Type.caption, color: Palette.inkMuted, textAlign: 'center' },
+
+  // Unified QR + UPI box
+  upiBody: { marginTop: Space.lg, gap: Space.lg },
+  upiBodyRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  qrSide: { alignItems: 'center', gap: Space.md },
+  qrFrame: {
+    padding: Space.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Palette.border,
+  },
+  qrCaption: { fontSize: Type.caption, color: Palette.inkSecondary, fontWeight: '600' },
+  upiOptions: { flex: 1, gap: Space.md },
+  upiOption: {
+    backgroundColor: Palette.cardMuted,
+    borderRadius: Radius.md,
+    borderWidth: 2,
+    borderColor: Palette.border,
+    paddingVertical: Space.md,
+    paddingHorizontal: Space.lg,
+  },
+  upiOptionActive: { borderColor: Palette.teal, backgroundColor: Palette.tealSoft },
+  upiOptionLabel: { fontSize: Type.body, fontWeight: '700', color: Palette.inkSecondary },
+  upiOptionLabelActive: { color: Palette.tealInk },
+  upiOptionSub: { fontSize: Type.caption, color: Palette.inkMuted, marginTop: 1 },
 
   backBtn: { alignSelf: 'flex-start' },
 });

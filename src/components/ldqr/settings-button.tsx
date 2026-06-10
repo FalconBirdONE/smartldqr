@@ -4,8 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { cardShadow, Palette, Space } from '@/constants/design';
 
-/** Hidden pre-setup and on the Settings screen itself. */
-const HIDDEN_PATHS = ['/onboarding', '/settings'];
+/** Hidden pre-setup, on Settings itself, and on the immersive payment pages. */
+const HIDDEN_PATHS = ['/onboarding', '/settings', '/upi-lite', '/upi-lite-tap'];
 
 /**
  * Floating Settings entry, fixed top-right. Mounted once in the root layout

@@ -13,7 +13,11 @@
       "PowerShell(npx expo lint)",
       "PowerShell(npm run *)",
       "PowerShell(git *)",
-      "PowerShell(npx expo install expo-camera)"
+      "PowerShell(npx expo install expo-camera)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)"
     ]
   }
 }

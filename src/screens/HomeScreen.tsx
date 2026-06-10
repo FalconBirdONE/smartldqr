@@ -39,7 +39,7 @@ const MODES: Mode[] = [
     title: 'Pay your bill',
     sub: 'Cashier scans your items here',
     icon: '🧾',
-    href: '/capture' as Href,
+    href: '/cashier' as Href,
   },
 ];
 
