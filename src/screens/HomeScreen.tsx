@@ -22,10 +22,10 @@ const MODES: Mode[] = [
     title: 'Scan & pay',
     sub: 'Scan items with the camera, then pay',
     icon: '🛒',
-    // Cast: the /capture and /qsr routes are real but the typed-routes
+    // Cast: the /self-checkout and /qsr routes are real but the typed-routes
     // manifest only picks them up once Expo regenerates it (next
     // `expo start`/build).
-    href: '/capture' as Href,
+    href: '/self-checkout' as Href,
   },
   {
     code: 'U4 · QSR SELF-ORDER',

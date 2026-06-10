@@ -9,7 +9,7 @@ import { TransactionStore } from '@/services/transaction-store';
 import type { CheckoutLine } from '@/types/checkout';
 
 /**
- * UPI LITE payment page.
+ * Tap & Pay payment page.
  *
  * Structure + green ripple animation are copied verbatim from the palm payment
  * surface (`PalmConfirm`); only the palm-specific copy is replaced with tap/NFC
@@ -20,7 +20,7 @@ import type { CheckoutLine } from '@/types/checkout';
 
 const RING = 220;
 
-export default function UpiLitePaymentScreen() {
+export default function TapAndPayScreen() {
   const router = useRouter();
   const { clearBasket } = useBasket();
   const params = useLocalSearchParams<{ source?: string; total?: string; basket?: string }>();
@@ -61,7 +61,7 @@ export default function UpiLitePaymentScreen() {
             total_amount: String(total),
             timestamp: new Date().toISOString(),
             method: methodLabel,
-            app: 'UPI Lite',
+            app: 'Tap & Pay',
           },
         });
       } catch (e) {
@@ -84,7 +84,7 @@ export default function UpiLitePaymentScreen() {
       })
     );
     loop.start();
-    const id = setTimeout(() => void complete('UPI Lite'), 2600);
+    const id = setTimeout(() => void complete('Tap & Pay'), 2600);
     return () => {
       loop.stop();
       ring.setValue(0);
@@ -104,7 +104,7 @@ export default function UpiLitePaymentScreen() {
   return (
     <View style={styles.screen}>
       <View style={styles.top}>
-        <TrustChip label="UPI LITE · on-device · Never leaves the store" tone="light" icon="🔒" />
+        <TrustChip label="Tap & Pay · on-device · Never leaves the store" tone="light" icon="🔒" />
       </View>
 
       <View style={styles.center}>
@@ -116,13 +116,13 @@ export default function UpiLitePaymentScreen() {
           </View>
         </View>
         <Text style={styles.title}>Tap your phone on receiver</Text>
-        <Text style={styles.sub}>Authorising your UPI LITE payment…</Text>
+        <Text style={styles.sub}>Reading your UPI app to authorise this payment…</Text>
         <Text style={styles.amount}>₹{total.toLocaleString('en-IN')}</Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </View>
 
       <View style={styles.bottom}>
-        <Pressable onPress={() => void complete('UPI Lite · UPI PIN')} style={styles.skip}>
+        <Pressable onPress={() => void complete('Tap & Pay · UPI PIN')} style={styles.skip}>
           <Text style={styles.skipText}>Skip — use UPI PIN instead</Text>
         </Pressable>
       </View>
