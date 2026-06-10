@@ -99,11 +99,6 @@ export default function HomeScreen() {
 
         <View style={styles.footerNote}>
           <TrustChip label="UPI · UPI Lite · Credit Line on UPI" tone="light" icon="✓" />
-          <Pressable onPress={() => router.push('/catalog')} hitSlop={8}>
-            <Text style={[styles.catalogLink, { color: brand.onBrandMuted }]}>
-              Manage catalog ›
-            </Text>
-          </Pressable>
         </View>
       </ScrollView>
     </BrandCanvas>
@@ -211,10 +206,5 @@ const styles = StyleSheet.create({
   footerNote: {
     alignItems: 'center',
     marginTop: Space.sm,
-    gap: Space.md,
-  },
-  catalogLink: {
-    fontSize: Type.caption,
-    fontWeight: '600',
   },
 });
