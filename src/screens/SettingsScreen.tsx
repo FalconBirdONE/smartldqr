@@ -25,9 +25,20 @@ export default function SettingsScreen() {
     router.replace('/onboarding');
   };
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.scroll}>
       <View style={styles.header}>
+        <Pressable onPress={handleBack} hitSlop={12} style={styles.backBtn}>
+          <Text style={styles.backText}>‹ Back</Text>
+        </Pressable>
         <Eyebrow>Device</Eyebrow>
         <Text style={styles.title}>Settings</Text>
       </View>
@@ -93,6 +104,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Palette.canvas },
   scroll: { padding: SCREEN_GUTTER, gap: Space.lg },
   header: { gap: 2 },
+  backBtn: { alignSelf: 'flex-start', marginBottom: Space.sm },
+  backText: { fontSize: Type.body, fontWeight: '700', color: Palette.indigo },
   title: { fontSize: Type.title, fontWeight: '800', color: Palette.ink },
   card: {
     backgroundColor: Palette.card,
