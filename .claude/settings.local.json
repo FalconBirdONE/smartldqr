@@ -11,7 +11,8 @@
       "PowerShell(npx expo install react-native-svg react-native-qrcode-svg)",
       "PowerShell(npx tsc --noEmit -p tsconfig.json)",
       "PowerShell(npx expo lint)",
-      "PowerShell(npm run *)"
+      "PowerShell(npm run *)",
+      "PowerShell(git *)"
     ]
   }
 }
