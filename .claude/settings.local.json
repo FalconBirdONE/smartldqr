@@ -10,7 +10,15 @@
       "PowerShell(npx tsc --noEmit)",
       "PowerShell(npx expo install react-native-svg react-native-qrcode-svg)",
       "PowerShell(npx tsc --noEmit -p tsconfig.json)",
-      "PowerShell(npx expo lint)"
+      "PowerShell(npx expo lint)",
+      "PowerShell(npm run *)",
+      "PowerShell(git *)",
+      "PowerShell(npx expo install expo-camera)",
+      "Bash(npx tsc *)",
+      "Bash(npx eslint *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(python3 *)"
     ]
   }
 }

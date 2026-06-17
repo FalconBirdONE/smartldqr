@@ -62,6 +62,38 @@ export const BasketStore = {
     return row?.total ?? 0;
   },
 
+  /**
+   * Set a line's quantity, recomputing its subtotal from the line's own
+   * price. A quantity of 0 (or less) removes the line.
+   */
+  async updateItemQuantity(basketId: string, quantity: number): Promise<boolean> {
+    const db = await getDb();
+    if (quantity <= 0) {
+      await db.runAsync('DELETE FROM basket_items WHERE basket_id = ?', basketId);
+      return true;
+    }
+    const existing = await db.getFirstAsync<BasketItem>(
+      'SELECT * FROM basket_items WHERE basket_id = ?',
+      basketId
+    );
+    if (!existing) {
+      return false;
+    }
+    await db.runAsync(
+      'UPDATE basket_items SET quantity = ?, subtotal = ? WHERE basket_id = ?',
+      quantity,
+      existing.price * quantity,
+      basketId
+    );
+    return true;
+  },
+
+  async removeItem(basketId: string): Promise<boolean> {
+    const db = await getDb();
+    await db.runAsync('DELETE FROM basket_items WHERE basket_id = ?', basketId);
+    return true;
+  },
+
   async clearBasket(): Promise<boolean> {
     const db = await getDb();
     await db.runAsync('DELETE FROM basket_items');
